@@ -43,7 +43,7 @@ def procesar_imagen_recibo(imagen):
         Asegúrate de que los kWh sean números enteros y los pagos sean números decimales (sin símbolo de pesos).
         """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=[imagen, instruccion]
         )
         
@@ -173,7 +173,7 @@ if st.button("Generar Autodiagnóstico con IA 🧠", type="primary"):
             """
             
             respuesta_ia = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.8-flash',
                 contents=prompt
             )
             st.info(respuesta_ia.text)
