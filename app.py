@@ -15,12 +15,7 @@ st.set_page_config(
 # --- ESTILOS CSS PERSONALIZADOS (UI MODERNA Y LIMPIA) ---
 st.markdown("""
     <style>
-    /* Fondo general */
-    .main {
-        background-color: #f8f9fa;
-    }
-    
-    /* Encabezados de secciones con borde de acento */
+    .main { background-color: #f8f9fa; }
     .section-header {
         color: #1e293b;
         font-weight: 700;
@@ -30,15 +25,11 @@ st.markdown("""
         border-left: 4px solid #2563eb;
         padding-left: 10px;
     }
-    
-    /* Botones primarios destacados */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
         transition: all 0.2s ease;
     }
-    
-    /* Métricas con diseño limpio */
     [data-testid="stMetricValue"] {
         font-size: 1.8rem !important;
         font-weight: 700 !important;
@@ -104,16 +95,14 @@ if metodo == "🖼️ Subir imagen":
     if archivo:
         if st.button("Leer datos con IA 🔍"):
             with st.spinner("Analizando la tabla del recibo... 🧐"):
-                imagen_pil = Image.open(archivo)
-                procesar_imagen_recibo(imagen_pil)
+                procesar_imagen_recibo(Image.open(archivo))
 
 elif metodo == "📸 Tomar foto":
     foto = st.camera_input("Enfoca la tabla de historial")
     if foto:
         if st.button("Leer datos con IA 🔍"):
             with st.spinner("Analizando la foto... 🧐"):
-                imagen_pil = Image.open(foto)
-                procesar_imagen_recibo(imagen_pil)
+                procesar_imagen_recibo(Image.open(foto))
 
 st.caption("Captura o edita los datos en la tabla:")
 tabla_cfe = st.data_editor(
@@ -140,24 +129,17 @@ tab_refri, tab_climas, tab_luces, tab_otros, tab_inst = st.tabs([
 
 consumo_calculado_mensual = 0
 
-# --- TAB REFRIGERACIÓN (MEJORADO) ---
+# --- TAB REFRIGERACIÓN ---
 with tab_refri:
     st.markdown("##### Configuración de Refrigeradores")
     num_refris = st.number_input("¿Cuántos refrigeradores o congeladores tienes?", min_value=1, max_value=5, value=1)
-    
     kwh_refri_mensual_total = 0
     
     for i in range(int(num_refris)):
         with st.expander(f"Refrigerador / Congelador #{i+1}", expanded=True):
             col_r1, col_r2 = st.columns(2)
-            
             with col_r1:
-                tipo_entrada = st.radio(
-                    "¿Cómo ingresarás la información de consumo?",
-                    ["Especificar Potencia (Watts)", "Consumo Anual de Etiqueta (kWh/año)"],
-                    key=f"tipo_in_{i}"
-                )
-                
+                tipo_entrada = st.radio("¿Cómo ingresarás la información de consumo?", ["Especificar Potencia (Watts)", "Consumo Anual de Etiqueta (kWh/año)"], key=f"tipo_in_{i}")
                 tipo_refri = st.selectbox("Tecnología del motor", ["Convencional", "Inverter"], key=f"tec_ref_{i}")
                 edad_refri = st.selectbox("Antigüedad estimada", ["Menor a 3 años", "De 3 a 8 años", "Mayor a 8 años"], key=f"edad_ref_{i}")
 
@@ -166,19 +148,15 @@ with tab_refri:
                     potencia_def = 300 if tipo_refri == "Inverter" else 450
                     potencia_w = st.number_input("Potencia nominal (Watts)", min_value=50, max_value=2000, value=potencia_def, step=10, key=f"watts_ref_{i}")
                     horas_uso = 7 if edad_refri == "Menor a 3 años" else (10 if edad_refri == "De 3 a 8 años" else 14)
-                    
                     kwh_diario = (potencia_w * horas_uso) / 1000
                     kwh_mensual = kwh_diario * 30
-                    
-                else: # Por consumo anual etiqueta
+                else: 
                     kwh_anual_etiq = st.number_input("Consumo anual impreso en la etiqueta CFE/NOM (kWh/año)", min_value=100, max_value=2000, value=450, step=10, key=f"kwh_anual_{i}")
-                    
                     kwh_diario = kwh_anual_etiq / 365
                     kwh_mensual = kwh_anual_etiq / 12
                     
                 st.metric("Consumo diario estimado", f"{kwh_diario:.2f} kWh/día")
                 st.metric("Consumo mensual estimado", f"{kwh_mensual:.1f} kWh/mes")
-                
                 kwh_refri_mensual_total += kwh_mensual
 
     consumo_calculado_mensual += kwh_refri_mensual_total
@@ -195,7 +173,7 @@ with tab_climas:
             with colA:
                 capacidad = st.selectbox("Capacidad", ["1 Ton (12,000 BTU)", "1.5 Ton (18,000 BTU)", "2 Ton (24,000 BTU)"], key=f"cap_{i}")
                 btu = int(capacidad.split("(")[1].split()[0].replace(",", ""))
-                horas_ac = st.slider("Horas de uso al día", 1, 24, 8, key=f"hrs_{i}")
+                horas_ac = st.number_input("Horas de uso al día", min_value=0, max_value=24, value=8, key=f"hrs_ac_{i}")
             with colB:
                 tecnologia_ac = st.selectbox("Tecnología", ["Convencional", "Inverter"], key=f"tec_{i}")
                 seer = st.number_input("SEER/EER (Eficiencia)", value=(17.0 if tecnologia_ac == "Inverter" else 10.0), key=f"seer_{i}")
@@ -206,32 +184,46 @@ with tab_climas:
             
     consumo_calculado_mensual += kwh_climas_mensual
 
-# --- TAB ILUMINACIÓN ---
+# --- TAB ILUMINACIÓN (ACTUALIZADO A HABITACIONES DINÁMICAS) ---
 with tab_luces:
-    st.markdown("##### Iluminación por Zonas")
-    zonas = ["Recámaras", "Sala/Comedor", "Cocina/Baños", "Exteriores"]
+    st.markdown("##### Iluminación por Habitaciones o Espacios")
+    num_zonas = st.number_input("¿Cuántas habitaciones o zonas diferentes vas a registrar?", min_value=1, max_value=15, value=3)
     kwh_luces_mensual = 0
-    for zona in zonas:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            focos = st.number_input(f"Focos en {zona}", 0, 20, 0)
-        with c2:
-            tipo_foco = st.selectbox("Tipo", ["LED (10W)", "Ahorrador (20W)", "Incandescente (60W)"], key=f"t_{zona}")
-            watts_foco = int(tipo_foco.split("(")[1].replace("W)", ""))
-        with c3:
-            horas_foco = st.number_input("Horas al día", 0, 24, 0, key=f"h_{zona}")
-        kwh_luces_mensual += (focos * watts_foco * horas_foco * 30) / 1000
+    
+    for i in range(int(num_zonas)):
+        with st.expander(f"Zona de Iluminación #{i+1}", expanded=(i==0)):
+            nombre_zona = st.text_input("Nombre de la zona (ej. Recámara Principal, Cocina, Patio)", value=f"Habitación {i+1}", key=f"nombre_z_{i}")
+            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                focos = st.number_input(f"Cantidad de focos", min_value=0, max_value=30, value=1, key=f"focos_{i}")
+            with c2:
+                tipo_foco = st.selectbox("Tipo de foco", ["LED (10W)", "Ahorrador (20W)", "Incandescente (60W)"], key=f"t_foco_{i}")
+                watts_foco = int(tipo_foco.split("(")[1].replace("W)", ""))
+            with c3:
+                horas_foco = st.number_input("Horas de uso al día", min_value=0, max_value=24, value=4, key=f"h_foco_{i}")
+                
+            consumo_zona = (focos * watts_foco * horas_foco * 30) / 1000
+            st.caption(f"Consumo estimado en {nombre_zona}: **{consumo_zona:.2f} kWh/mes**")
+            kwh_luces_mensual += consumo_zona
         
     consumo_calculado_mensual += kwh_luces_mensual
 
-# --- TAB OTROS ---
+# --- TAB OTROS (ACTUALIZADO CON CELULARES) ---
 with tab_otros:
-    st.markdown("##### Electrodomésticos Secundarios")
+    st.markdown("##### Electrodomésticos Secundarios y Dispositivos")
     c1, c2 = st.columns(2)
-    hrs_tv = c1.number_input("Horas TV al día", 0, 24, 4)
-    hrs_pc = c1.number_input("Horas Computadora al día", 0, 24, 3)
-    lavadoras = c2.number_input("Cargas lavadora a la semana", 0, 20, 3)
-    kwh_otros = ((hrs_tv * 100 * 30) + (hrs_pc * 150 * 30) + (lavadoras * 4 * 500)) / 1000
+    
+    with c1:
+        hrs_tv = st.number_input("Horas de TV al día (aprox. 100W)", min_value=0, max_value=24, value=4)
+        hrs_pc = st.number_input("Horas de Computadora al día (aprox. 150W)", min_value=0, max_value=24, value=3)
+        lavadoras = st.number_input("Cargas de lavadora a la semana (aprox. 500W)", min_value=0, max_value=20, value=3)
+        
+    with c2:
+        celulares = st.number_input("Número de celulares a cargar al día", min_value=0, max_value=15, value=2)
+        hrs_cel = st.number_input("Horas de carga por celular al día (aprox. 10W)", min_value=0, max_value=24, value=2)
+        
+    kwh_otros = ((hrs_tv * 100 * 30) + (hrs_pc * 150 * 30) + (lavadoras * 4 * 500) + (celulares * hrs_cel * 10 * 30)) / 1000
     consumo_calculado_mensual += kwh_otros
 
 # --- TAB INSTALACIÓN ---
@@ -251,9 +243,9 @@ if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_contain
     
     st.header("📊 Resultados Matemáticos")
     colA, colB, colC = st.columns(3)
-    colA.metric("Consumo Anual CFE", f"{consumo_total_cfe:.1f} kWh")
-    colB.metric("Consumo Estimado (Censo)", f"{consumo_anual_calculado:.1f} kWh")
-    colC.metric("Desviación", f"{diferencia:.1f} kWh", delta=f"{diferencia:.1f} kWh", delta_color="inverse")
+    colA.metric("Consumo Anual CFE", f"{consumo_total_cfe:,.1f} kWh")
+    colB.metric("Consumo Estimado (Censo)", f"{consumo_anual_calculado:,.1f} kWh")
+    colC.metric("Desviación", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
     
     st.subheader("🤖 Análisis y Propuesta de IA Experta")
     with st.spinner("La IA está auditando tus datos comparando tu censo con tu recibo..."):
