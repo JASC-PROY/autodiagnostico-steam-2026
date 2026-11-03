@@ -239,7 +239,6 @@ with tab_otros:
                 key=f"tipo_o_{i}"
             )
         with c3:
-            # Asignación automática de Watts sugeridos según el equipo
             if tipo_eq == "Televisión": def_w = 100
             elif tipo_eq == "Computadora / Laptop": def_w = 150
             elif tipo_eq == "Consola de Videojuegos": def_w = 200
@@ -254,10 +253,8 @@ with tab_otros:
             
             watts_eq = st.number_input("Watts (c/u)", min_value=1, max_value=10000, value=def_w, key=f"w_o_{i}")
         with c4:
-            # Se piden horas A LA SEMANA para que sea más fácil calcular cosas que no se usan diario
             hrs_sem = st.number_input("Horas de uso A LA SEMANA", min_value=0.0, max_value=168.0, value=10.0, step=0.5, key=f"h_o_{i}")
             
-        # Fórmula: (Watts * (Horas_semana / 7) * 30 días) / 1000 para sacar los kWh mensuales
         consumo_eq_mensual = (cant * watts_eq * (hrs_sem / 7) * 30) / 1000
         kwh_otros += consumo_eq_mensual
         
@@ -266,9 +263,28 @@ with tab_otros:
 
 # --- TAB INSTALACIÓN ---
 with tab_inst:
-    st.info("Estos datos técnicos ayudarán a la Inteligencia Artificial a detectar fugas o riesgos.")
-    tipo_proteccion = st.selectbox("Tipo de protección principal", ["Pastillas termomagnéticas (Moderno)", "Fusibles de cartucho (Antiguo)", "Tapones (Muy antiguo)"])
-    edad_cableado = st.selectbox("Antigüedad estimada del cableado", ["Menos de 10 años", "Entre 10 y 20 años", "Más de 20 años"])
+    st.info("Estos datos técnicos ayudarán a la Inteligencia Artificial a detectar fugas, riesgos y problemas de seguridad eléctrica.")
+    
+    col_i1, col_i2 = st.columns(2)
+    
+    with col_i1:
+        edad_cableado = st.selectbox("Antigüedad estimada del cableado", ["Menos de 10 años", "Entre 10 y 20 años", "Más de 20 años"])
+        interruptor_principal = st.selectbox("Interruptor Principal (junto al medidor)", ["Pastilla (Termomagnético)", "Fusibles (Cartucho)", "Tapones (Muy antiguo)", "No estoy seguro"])
+        sistema_tierra = st.radio("¿Cuenta con sistema de tierra física (tercer cable/varilla)?", ["Sí", "No", "No estoy seguro"], horizontal=True)
+        
+    with col_i2:
+        centro_carga = st.radio("¿Cuenta con Centro de Carga al interior de la casa?", ["Sí", "No"], horizontal=True)
+        if centro_carga == "Sí":
+            num_circuitos = st.number_input("¿Cuántos circuitos derivados (pastillas) tiene?", min_value=1, max_value=30, value=2)
+        else:
+            num_circuitos = 0
+            
+    st.markdown("##### ⚠️ Historial de Problemas")
+    problemas_recientes = st.radio("¿Ha tenido problemas eléctricos recientemente (cortos circuitos, parpadeos, olor a quemado, se botan las pastillas)?", ["No", "Sí"], horizontal=True)
+    
+    desc_falla = ""
+    if problemas_recientes == "Sí":
+        desc_falla = st.text_area("Describa brevemente la falla o problema que ha notado:")
 
 st.divider()
 
@@ -276,34 +292,78 @@ st.divider()
 st.markdown('<div class="section-header">3. Resultados y Auditoría Energética</div>', unsafe_allow_html=True)
 
 if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_container_width=True):
+    
+    # 1. CÁLCULOS GENERALES
     consumo_anual_calculado = consumo_calculado_mensual * 12
     diferencia = consumo_total_cfe - consumo_anual_calculado
     
+    # 2. CÁLCULOS DE PROMEDIOS DIARIOS Y CERTEZA
+    promedio_diario_cfe = consumo_total_cfe / 365 if consumo_total_cfe > 0 else 0
+    promedio_diario_calculado = consumo_anual_calculado / 365 if consumo_anual_calculado > 0 else 0
+    
+    if promedio_diario_calculado > 0:
+        grado_certeza = (promedio_diario_cfe / promedio_diario_calculado) * 100
+    else:
+        grado_certeza = 0.0
+
+    # 3. CÁLCULOS DE PORCENTAJES POR CATEGORÍA
+    if consumo_calculado_mensual > 0:
+        pct_refri = (kwh_refri_mensual_total / consumo_calculado_mensual) * 100
+        pct_climas = (kwh_climas_mensual / consumo_calculado_mensual) * 100
+        pct_luces = (kwh_luces_mensual / consumo_calculado_mensual) * 100
+        pct_otros = (kwh_otros / consumo_calculado_mensual) * 100
+    else:
+        pct_refri = pct_climas = pct_luces = pct_otros = 0.0
+    
+    # --- RENDERIZADO DE MÉTRICAS ---
     st.header("📊 Resultados Matemáticos")
-    colA, colB, colC = st.columns(3)
-    colA.metric("Consumo Anual CFE", f"{consumo_total_cfe:,.1f} kWh")
-    colB.metric("Consumo Estimado (Censo)", f"{consumo_anual_calculado:,.1f} kWh")
-    colC.metric("Desviación", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
+    
+    # Fila 1: Promedios y Desviación
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Promedio Diario CFE", f"{promedio_diario_cfe:,.2f} kWh/día")
+    col2.metric("Promedio Diario Calculado", f"{promedio_diario_calculado:,.2f} kWh/día")
+    col3.metric("Desviación Anual", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
+    
+    # Color y mensaje para Grado de Certeza
+    certeza_color = "normal" if 80 <= grado_certeza <= 120 else "inverse"
+    col4.metric("Grado de Certeza (CFE/Cálculo)", f"{grado_certeza:,.1f}%", help="Un valor muy por encima de 100% indica posibles fugas de energía. Un valor muy bajo indica que sobreestimaste los aparatos en el censo.")
+    
+    # Fila 2: Porcentajes
+    st.markdown("##### 🥧 Distribución del Consumo Calculado")
+    cC1, cC2, cC3, cC4 = st.columns(4)
+    cC1.metric("🧊 Refrigeración", f"{pct_refri:.1f}%")
+    cC2.metric("❄️ Climatización", f"{pct_climas:.1f}%")
+    cC3.metric("💡 Iluminación", f"{pct_luces:.1f}%")
+    cC4.metric("💻 Otros Equipos", f"{pct_otros:.1f}%")
+    
+    st.divider()
     
     st.subheader("🤖 Análisis y Propuesta de IA Experta")
-    with st.spinner("La IA está auditando tus datos comparando tu censo con tu recibo..."):
+    with st.spinner("La IA está auditando tus datos, analizando la certeza matemática, los riesgos y tu recibo..."):
         try:
             client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
             
             prompt = f"""
             Actúa como un ingeniero experto en auditoría energética residencial en México.
             Acabo de realizar un autodiagnóstico:
-            - Consumo cobrado por CFE en el año: {consumo_total_cfe} kWh.
-            - Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado} kWh.
-            - Desviación entre cobro y aparatos: {diferencia} kWh.
+            - Consumo cobrado por CFE en el año: {consumo_total_cfe} kWh (Promedio diario: {promedio_diario_cfe:.2f} kWh/día).
+            - Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado} kWh (Promedio diario: {promedio_diario_calculado:.2f} kWh/día).
+            - Grado de certeza (CFE/Censo): {grado_certeza:.1f}%.
+            - Desviación entre cobro y aparatos: {diferencia} kWh anuales.
             
-            Mis mayores consumos mensuales se dividen así: Climas ({kwh_climas_mensual:.1f} kWh), Refrigeración ({kwh_refri_mensual_total:.1f} kWh), Iluminación ({kwh_luces_mensual:.1f} kWh), Otros Equipos ({kwh_otros:.1f} kWh).
-            Además, mi instalación eléctrica tiene {tipo_proteccion} y el cableado tiene {edad_cableado}.
+            Mi distribución de consumo según los aparatos es: Refrigeración ({pct_refri:.1f}%), Climatización ({pct_climas:.1f}%), Iluminación ({pct_luces:.1f}%), y Otros ({pct_otros:.1f}%).
+            
+            Datos de la instalación eléctrica y seguridad:
+            - Antigüedad del cableado: {edad_cableado}.
+            - Tipo de interruptor principal: {interruptor_principal}.
+            - Cuenta con centro de carga interno: {centro_carga} (Número de circuitos/pastillas: {num_circuitos}).
+            - Cuenta con sistema de tierra física: {sistema_tierra}.
+            - ¿Ha tenido fallas recientes?: {problemas_recientes}. {f'Descripción de la falla: {desc_falla}' if problemas_recientes == 'Sí' else ''}
             
             Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
-            1. Diagnóstico de la desviación (¿Es normal? ¿Indica consumos vampiro o fugas a tierra considerando mi tipo de instalación y cableado?).
-            2. Área de mayor oportunidad (¿Dónde estoy gastando más?).
-            3. Propuesta de ahorro (Acciones concretas para reducir los kWh).
+            1. Diagnóstico de Certeza y Seguridad (Analiza el Grado de Certeza de {grado_certeza:.1f}%. Si es muy alto o bajo, di qué significa. ¿El estado del cableado y las fallas descritas indican fugas a tierra, riesgos de incendio o consumos vampiro severos justificando esa desviación?).
+            2. Área de mayor oportunidad (¿Dónde estoy gastando más energía basándose en mis porcentajes?).
+            3. Propuesta de ahorro y remediación (Acciones concretas para reducir los kWh en la categoría más alta y recomendaciones urgentes de mantenimiento eléctrico según los datos proporcionados).
             """
             
             respuesta_ia = client.models.generate_content(
