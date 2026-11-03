@@ -224,20 +224,45 @@ with tab_luces:
 
 # --- TAB OTROS ---
 with tab_otros:
-    st.markdown("##### Electrodomésticos Secundarios y Dispositivos")
-    c1, c2 = st.columns(2)
+    st.markdown("##### Electrodomésticos Secundarios y Otras Cargas")
+    num_otros = st.number_input("¿Cuántos tipos distintos de aparatos vas a registrar?", min_value=1, max_value=20, value=3)
+    kwh_otros = 0
     
-    with c1:
-        hrs_tv = st.number_input("Horas de TV al día (aprox. 100W)", min_value=0.0, max_value=24.0, value=4.0, step=0.5)
-        hrs_pc = st.number_input("Horas de Computadora al día (aprox. 150W)", min_value=0.0, max_value=24.0, value=3.0, step=0.5)
-        lavadoras = st.number_input("Cargas de lavadora a la semana (aprox. 500W)", min_value=0, max_value=20, value=3)
+    for i in range(int(num_otros)):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            cant = st.number_input("Cantidad", min_value=1, max_value=20, value=1, key=f"cant_o_{i}")
+        with c2:
+            tipo_eq = st.selectbox(
+                "Tipo de aparato",
+                ["Televisión", "Computadora / Laptop", "Consola de Videojuegos", "Estéreo / Bocinas", "Lavadora", "Secadora de Ropa", "Plancha", "Microondas", "Refrigerador de agua (Dispensador)", "Celular / Tablet", "Otro"],
+                key=f"tipo_o_{i}"
+            )
+        with c3:
+            # Asignación automática de Watts sugeridos según el equipo
+            if tipo_eq == "Televisión": def_w = 100
+            elif tipo_eq == "Computadora / Laptop": def_w = 150
+            elif tipo_eq == "Consola de Videojuegos": def_w = 200
+            elif tipo_eq == "Estéreo / Bocinas": def_w = 80
+            elif tipo_eq == "Lavadora": def_w = 500
+            elif tipo_eq == "Secadora de Ropa": def_w = 3000
+            elif tipo_eq == "Plancha": def_w = 1200
+            elif tipo_eq == "Microondas": def_w = 1000
+            elif tipo_eq == "Refrigerador de agua (Dispensador)": def_w = 150
+            elif tipo_eq == "Celular / Tablet": def_w = 15
+            else: def_w = 100
+            
+            watts_eq = st.number_input("Watts (c/u)", min_value=1, max_value=10000, value=def_w, key=f"w_o_{i}")
+        with c4:
+            # Se piden horas A LA SEMANA para que sea más fácil calcular cosas que no se usan diario
+            hrs_sem = st.number_input("Horas de uso A LA SEMANA", min_value=0.0, max_value=168.0, value=10.0, step=0.5, key=f"h_o_{i}")
+            
+        # Fórmula: (Watts * (Horas_semana / 7) * 30 días) / 1000 para sacar los kWh mensuales
+        consumo_eq_mensual = (cant * watts_eq * (hrs_sem / 7) * 30) / 1000
+        kwh_otros += consumo_eq_mensual
         
-    with c2:
-        celulares = st.number_input("Número de celulares a cargar al día", min_value=0, max_value=15, value=3)
-        hrs_cel = st.number_input("Horas de carga por celular al día (aprox. 15W)", min_value=0.0, max_value=24.0, value=2.0, step=0.5)
-        
-    kwh_otros = ((hrs_tv * 100 * 30) + (hrs_pc * 150 * 30) + (lavadoras * 4 * 500) + (celulares * hrs_cel * 15 * 30)) / 1000
     consumo_calculado_mensual += kwh_otros
+    st.caption(f"**Consumo total estimado en Otros Equipos:** {kwh_otros:.2f} kWh/mes")
 
 # --- TAB INSTALACIÓN ---
 with tab_inst:
@@ -272,7 +297,7 @@ if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_contain
             - Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado} kWh.
             - Desviación entre cobro y aparatos: {diferencia} kWh.
             
-            Mis mayores consumos mensuales se dividen así: Climas ({kwh_climas_mensual} kWh), Refrigeración ({kwh_refri_mensual_total} kWh), Iluminación ({kwh_luces_mensual} kWh).
+            Mis mayores consumos mensuales se dividen así: Climas ({kwh_climas_mensual:.1f} kWh), Refrigeración ({kwh_refri_mensual_total:.1f} kWh), Iluminación ({kwh_luces_mensual:.1f} kWh), Otros Equipos ({kwh_otros:.1f} kWh).
             Además, mi instalación eléctrica tiene {tipo_proteccion} y el cableado tiene {edad_cableado}.
             
             Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
