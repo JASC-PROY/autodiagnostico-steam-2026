@@ -128,6 +128,9 @@ tab_refri, tab_climas, tab_luces, tab_otros, tab_inst = st.tabs([
 ])
 
 consumo_calculado_mensual = 0
+lista_refris_ia = []
+lista_climas_ia = []
+lista_focos_ia = []
 
 # --- TAB REFRIGERACIÓN ---
 with tab_refri:
@@ -158,6 +161,8 @@ with tab_refri:
                 st.metric("Consumo diario estimado", f"{kwh_diario:.2f} kWh/día")
                 st.metric("Consumo mensual estimado", f"{kwh_mensual:.1f} kWh/mes")
                 kwh_refri_mensual_total += kwh_mensual
+                
+            lista_refris_ia.append(f"Tecnología: {tipo_refri}, Edad: {edad_refri}")
 
     consumo_calculado_mensual += kwh_refri_mensual_total
 
@@ -176,11 +181,14 @@ with tab_climas:
                 horas_ac = st.number_input("Horas de uso al día", min_value=0.0, max_value=24.0, value=8.0, step=0.5, key=f"hrs_ac_{i}")
             with colB:
                 tecnologia_ac = st.selectbox("Tecnología", ["Convencional", "Inverter"], key=f"tec_{i}")
+                edad_ac = st.selectbox("Antigüedad", ["Menos de 2 años", "Más de 2 años"], key=f"edad_ac_{i}")
                 seer = st.number_input("SEER/EER (Eficiencia)", value=(17.0 if tecnologia_ac == "Inverter" else 10.0), key=f"seer_{i}")
             
             watts_ac = btu / seer
             kwh_diario_ac = (watts_ac * horas_ac) / 1000
             kwh_climas_mensual += kwh_diario_ac * 15 
+            
+            lista_climas_ia.append(f"Tecnología: {tecnologia_ac}, Edad: {edad_ac}")
             
     consumo_calculado_mensual += kwh_climas_mensual
 
@@ -194,7 +202,6 @@ with tab_luces:
         with st.expander(f"Zona / Habitación #{i+1}", expanded=(i==0)):
             nombre_zona = st.text_input("Nombre del espacio (ej. Sala, Recámara Principal)", value=f"Habitación {i+1}", key=f"nombre_z_{i}")
             
-            # --- FOCOS / LÁMPARAS / VENTILADORES ---
             st.markdown("**💡 Dispositivos de Iluminación**")
             num_tipos_luz = st.number_input("¿Cuántos tipos distintos de dispositivos (focos, ventiladores) hay aquí?", min_value=1, max_value=5, value=1, key=f"num_tipos_{i}")
             
@@ -216,6 +223,7 @@ with tab_luces:
                     horas_foco = st.number_input("Horas/día", min_value=0.0, max_value=24.0, value=4.0, step=0.5, key=f"h_foco_{i}_{j}")
                     
                 consumo_focos_zona += (focos * watts_foco * horas_foco * 30) / 1000
+                lista_focos_ia.append(tipo_foco)
 
             st.caption(f"Consumo total estimado en **{nombre_zona}**: **{consumo_focos_zona:.2f} kWh/mes**")
             kwh_luces_mensual += consumo_focos_zona
@@ -288,89 +296,97 @@ with tab_inst:
 
 st.divider()
 
-# --- PASO 3: DIAGNÓSTICO IA ---
+# --- PASO 3: DIAGNÓSTICO IA Y RESULTADOS ---
 st.markdown('<div class="section-header">3. Resultados y Auditoría Energética</div>', unsafe_allow_html=True)
 
-if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_container_width=True):
-    
-    # 1. CÁLCULOS GENERALES
-    consumo_anual_calculado = consumo_calculado_mensual * 12
-    diferencia = consumo_total_cfe - consumo_anual_calculado
-    
-    # 2. CÁLCULOS DE PROMEDIOS DIARIOS Y CERTEZA
-    promedio_diario_cfe = consumo_total_cfe / 365 if consumo_total_cfe > 0 else 0
-    promedio_diario_calculado = consumo_anual_calculado / 365 if consumo_anual_calculado > 0 else 0
-    
-    if promedio_diario_calculado > 0:
-        grado_certeza = (promedio_diario_cfe / promedio_diario_calculado) * 100
-    else:
-        grado_certeza = 0.0
+# 1. CÁLCULOS MATEMÁTICOS EN TIEMPO REAL
+consumo_anual_calculado = consumo_calculado_mensual * 12
+diferencia = consumo_total_cfe - consumo_anual_calculado
 
-    # 3. CÁLCULOS DE PORCENTAJES POR CATEGORÍA
-    if consumo_calculado_mensual > 0:
-        pct_refri = (kwh_refri_mensual_total / consumo_calculado_mensual) * 100
-        pct_climas = (kwh_climas_mensual / consumo_calculado_mensual) * 100
-        pct_luces = (kwh_luces_mensual / consumo_calculado_mensual) * 100
-        pct_otros = (kwh_otros / consumo_calculado_mensual) * 100
-    else:
-        pct_refri = pct_climas = pct_luces = pct_otros = 0.0
-    
-    # --- RENDERIZADO DE MÉTRICAS ---
-    st.header("📊 Resultados Matemáticos")
-    
-    # Fila 1: Promedios y Desviación
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Promedio Diario CFE", f"{promedio_diario_cfe:,.2f} kWh/día")
-    col2.metric("Promedio Diario Calculado", f"{promedio_diario_calculado:,.2f} kWh/día")
-    col3.metric("Desviación Anual", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
-    
-    # Color y mensaje para Grado de Certeza
-    certeza_color = "normal" if 80 <= grado_certeza <= 120 else "inverse"
-    col4.metric("Grado de Certeza (CFE/Cálculo)", f"{grado_certeza:,.1f}%", help="Un valor muy por encima de 100% indica posibles fugas de energía. Un valor muy bajo indica que sobreestimaste los aparatos en el censo.")
-    
-    # Fila 2: Porcentajes
-    st.markdown("##### 🥧 Distribución del Consumo Calculado")
-    cC1, cC2, cC3, cC4 = st.columns(4)
-    cC1.metric("🧊 Refrigeración", f"{pct_refri:.1f}%")
-    cC2.metric("❄️ Climatización", f"{pct_climas:.1f}%")
-    cC3.metric("💡 Iluminación", f"{pct_luces:.1f}%")
-    cC4.metric("💻 Otros Equipos", f"{pct_otros:.1f}%")
-    
-    st.divider()
-    
-    st.subheader("🤖 Análisis y Propuesta de IA Experta")
+promedio_diario_cfe = consumo_total_cfe / 365 if consumo_total_cfe > 0 else 0
+promedio_diario_calculado = consumo_anual_calculado / 365 if consumo_anual_calculado > 0 else 0
+
+if promedio_diario_calculado > 0:
+    grado_certeza = (promedio_diario_cfe / promedio_diario_calculado) * 100
+else:
+    grado_certeza = 0.0
+
+if consumo_calculado_mensual > 0:
+    pct_refri = (kwh_refri_mensual_total / consumo_calculado_mensual) * 100
+    pct_climas = (kwh_climas_mensual / consumo_calculado_mensual) * 100
+    pct_luces = (kwh_luces_mensual / consumo_calculado_mensual) * 100
+    pct_otros = (kwh_otros / consumo_calculado_mensual) * 100
+else:
+    pct_refri = pct_climas = pct_luces = pct_otros = 0.0
+
+# --- RENDERIZADO DE MÉTRICAS VISUALES ---
+st.subheader("📊 Resultados Matemáticos")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Promedio Diario CFE", f"{promedio_diario_cfe:,.2f} kWh/día")
+col2.metric("Promedio Diario Calculado", f"{promedio_diario_calculado:,.2f} kWh/día")
+col3.metric("Desviación Anual", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
+
+certeza_color = "normal" if 80 <= grado_certeza <= 120 else "inverse"
+col4.metric("Grado de Certeza", f"{grado_certeza:,.1f}%", help="Un valor alto indica posibles fugas. Un valor bajo indica aparatos sobreestimados.")
+
+st.markdown("##### 🥧 Distribución del Consumo Calculado")
+cC1, cC2, cC3, cC4 = st.columns(4)
+cC1.metric("🧊 Refrigeración", f"{pct_refri:.1f}%")
+cC2.metric("❄️ Climatización", f"{pct_climas:.1f}%")
+cC3.metric("💡 Iluminación", f"{pct_luces:.1f}%")
+cC4.metric("💻 Otros Equipos", f"{pct_otros:.1f}%")
+
+st.divider()
+
+# --- PREPARACIÓN DEL PROMPT ---
+# Pasamos las listas creadas arriba para que la IA sepa exactamente qué hay y aplique las reglas que solicitaste.
+info_refris_str = ", ".join(lista_refris_ia) if lista_refris_ia else "Ninguno"
+info_climas_str = ", ".join(lista_climas_ia) if lista_climas_ia else "Ninguno"
+info_focos_str = ", ".join(list(set(lista_focos_ia))) if lista_focos_ia else "Ninguno"
+
+prompt_ia = f"""Actúa como un ingeniero experto en auditoría energética residencial en México.
+Acabo de realizar un autodiagnóstico:
+- Consumo cobrado por CFE en el año: {consumo_total_cfe:,.0f} kWh (Promedio diario: {promedio_diario_cfe:.2f} kWh/día).
+- Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado:,.0f} kWh (Promedio diario: {promedio_diario_calculado:.2f} kWh/día).
+- Grado de certeza (CFE/Censo): {grado_certeza:.1f}%.
+- Desviación entre cobro y aparatos: {diferencia:,.0f} kWh anuales.
+
+Mi distribución de consumo según los aparatos es: Refrigeración ({pct_refri:.1f}%), Climatización ({pct_climas:.1f}%), Iluminación ({pct_luces:.1f}%), y Otros ({pct_otros:.1f}%).
+
+Detalle de mis equipos para aplicar reglas de eficiencia:
+- Refrigeradores en casa: {info_refris_str}
+- Climatización en casa: {info_climas_str}
+- Tipos de focos utilizados: {info_focos_str}
+
+Datos de la instalación eléctrica y seguridad:
+- Antigüedad del cableado: {edad_cableado}.
+- Tipo de interruptor principal: {interruptor_principal}.
+- Cuenta con centro de carga interno: {centro_carga} (Número de circuitos/pastillas: {num_circuitos}).
+- Cuenta con sistema de tierra física: {sistema_tierra}.
+- ¿Ha tenido fallas recientes?: {problemas_recientes}. {f'Descripción de la falla: {desc_falla}' if problemas_recientes == 'Sí' else ''}
+
+Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
+1. Diagnóstico de Certeza y Seguridad (Analiza el Grado de Certeza de {grado_certeza:.1f}%. Si es muy alto o bajo, di qué significa. ¿El estado del cableado y las fallas descritas indican fugas a tierra, riesgos de incendio o consumos vampiro severos justificando esa desviación?).
+2. Área de mayor oportunidad (¿Dónde estoy gastando más energía basándose en mis porcentajes?).
+3. Propuesta de ahorro y remediación (Acciones concretas para reducir los kWh en la categoría más alta y recomendaciones urgentes de mantenimiento eléctrico según los datos proporcionados. Además, incluye obligatoriamente las siguientes recomendaciones preventivas evaluando mis equipos actuales:
+   - Sugiere el cambio de aire acondicionado por tecnología Inverter si actualmente es convencional (estándar) y tiene más de 2 años de antigüedad.
+   - Sugiere el cambio de refrigerador si la tecnología actual tiene más de 7 años de antigüedad (Marcado como Mayor a 8 años).
+   - Recomienda la sustitución inmediata de lámparas LFC (ahorradoras), dicroicos, halógenos o cualquier tecnología que no sea LED por focos LED de alta eficiencia si detectas que los estoy usando).
+"""
+
+# --- BOTÓN PARA LLAMAR A LA IA ---
+st.subheader("🤖 Análisis y Propuesta de IA Experta")
+if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_container_width=True):
     with st.spinner("La IA está auditando tus datos, analizando la certeza matemática, los riesgos y tu recibo..."):
         try:
             client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
             
-            prompt = f"""
-            Actúa como un ingeniero experto en auditoría energética residencial en México.
-            Acabo de realizar un autodiagnóstico:
-            - Consumo cobrado por CFE en el año: {consumo_total_cfe} kWh (Promedio diario: {promedio_diario_cfe:.2f} kWh/día).
-            - Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado} kWh (Promedio diario: {promedio_diario_calculado:.2f} kWh/día).
-            - Grado de certeza (CFE/Censo): {grado_certeza:.1f}%.
-            - Desviación entre cobro y aparatos: {diferencia} kWh anuales.
-            
-            Mi distribución de consumo según los aparatos es: Refrigeración ({pct_refri:.1f}%), Climatización ({pct_climas:.1f}%), Iluminación ({pct_luces:.1f}%), y Otros ({pct_otros:.1f}%).
-            
-            Datos de la instalación eléctrica y seguridad:
-            - Antigüedad del cableado: {edad_cableado}.
-            - Tipo de interruptor principal: {interruptor_principal}.
-            - Cuenta con centro de carga interno: {centro_carga} (Número de circuitos/pastillas: {num_circuitos}).
-            - Cuenta con sistema de tierra física: {sistema_tierra}.
-            - ¿Ha tenido fallas recientes?: {problemas_recientes}. {f'Descripción de la falla: {desc_falla}' if problemas_recientes == 'Sí' else ''}
-            
-            Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
-            1. Diagnóstico de Certeza y Seguridad (Analiza el Grado de Certeza de {grado_certeza:.1f}%. Si es muy alto o bajo, di qué significa. ¿El estado del cableado y las fallas descritas indican fugas a tierra, riesgos de incendio o consumos vampiro severos justificando esa desviación?).
-            2. Área de mayor oportunidad (¿Dónde estoy gastando más energía basándose en mis porcentajes?).
-            3. Propuesta de ahorro y remediación (Acciones concretas para reducir los kWh en la categoría más alta y recomendaciones urgentes de mantenimiento eléctrico según los datos proporcionados).
-            """
-            
             respuesta_ia = client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=prompt
+                contents=prompt_ia
             )
             st.info(respuesta_ia.text)
             
         except Exception as e:
-            st.error(f"Error técnico exacto: {e}")
+            st.error(f"Error técnico al conectar con IA: {e}")
