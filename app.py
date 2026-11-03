@@ -320,7 +320,7 @@ else:
     pct_refri = pct_climas = pct_luces = pct_otros = 0.0
 
 # --- RENDERIZADO DE MÉTRICAS VISUALES ---
-st.subheader("📊 Resultados Matemáticos")
+st.subheader("📊 Resultados")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Promedio Diario CFE", f"{promedio_diario_cfe:,.2f} kWh/día")
