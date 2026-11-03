@@ -122,7 +122,7 @@ st.markdown('<div class="section-header">2. Censo de Carga y Observaciones (Anex
 tab_refri, tab_climas, tab_luces, tab_otros, tab_inst = st.tabs([
     "🧊 Refrigeración", 
     "❄️ Climatización", 
-    "💡 Iluminación", 
+    "💡 Iluminación y Ventiladores", 
     "💻 Otros Equipos", 
     "🔌 Instalación Eléctrica"
 ])
@@ -173,7 +173,7 @@ with tab_climas:
             with colA:
                 capacidad = st.selectbox("Capacidad", ["1 Ton (12,000 BTU)", "1.5 Ton (18,000 BTU)", "2 Ton (24,000 BTU)"], key=f"cap_{i}")
                 btu = int(capacidad.split("(")[1].split()[0].replace(",", ""))
-                horas_ac = st.number_input("Horas de uso al día", min_value=0, max_value=24, value=8, key=f"hrs_ac_{i}")
+                horas_ac = st.number_input("Horas de uso al día", min_value=0.0, max_value=24.0, value=8.0, step=0.5, key=f"hrs_ac_{i}")
             with colB:
                 tecnologia_ac = st.selectbox("Tecnología", ["Convencional", "Inverter"], key=f"tec_{i}")
                 seer = st.number_input("SEER/EER (Eficiencia)", value=(17.0 if tecnologia_ac == "Inverter" else 10.0), key=f"seer_{i}")
@@ -184,46 +184,80 @@ with tab_climas:
             
     consumo_calculado_mensual += kwh_climas_mensual
 
-# --- TAB ILUMINACIÓN (ACTUALIZADO A HABITACIONES DINÁMICAS) ---
+# --- TAB ILUMINACIÓN Y VENTILADORES (ACTUALIZADO CON TIPOS MÚLTIPLES) ---
 with tab_luces:
-    st.markdown("##### Iluminación por Habitaciones o Espacios")
-    num_zonas = st.number_input("¿Cuántas habitaciones o zonas diferentes vas a registrar?", min_value=1, max_value=15, value=3)
+    st.markdown("##### Iluminación y Ventilación por Espacios")
+    num_zonas = st.number_input("¿Cuántas habitaciones o zonas vas a registrar?", min_value=1, max_value=15, value=3)
     kwh_luces_mensual = 0
     
     for i in range(int(num_zonas)):
-        with st.expander(f"Zona de Iluminación #{i+1}", expanded=(i==0)):
-            nombre_zona = st.text_input("Nombre de la zona (ej. Recámara Principal, Cocina, Patio)", value=f"Habitación {i+1}", key=f"nombre_z_{i}")
+        with st.expander(f"Zona / Habitación #{i+1}", expanded=(i==0)):
+            nombre_zona = st.text_input("Nombre del espacio (ej. Sala, Recámara Principal)", value=f"Habitación {i+1}", key=f"nombre_z_{i}")
             
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                focos = st.number_input(f"Cantidad de focos", min_value=0, max_value=30, value=1, key=f"focos_{i}")
-            with c2:
-                tipo_foco = st.selectbox("Tipo de foco", ["LED (10W)", "Ahorrador (20W)", "Incandescente (60W)"], key=f"t_foco_{i}")
-                watts_foco = int(tipo_foco.split("(")[1].replace("W)", ""))
-            with c3:
-                horas_foco = st.number_input("Horas de uso al día", min_value=0, max_value=24, value=4, key=f"h_foco_{i}")
+            # --- FOCOS ---
+            st.markdown("**💡 Focos y Lámparas**")
+            num_tipos_luz = st.number_input("¿Cuántos tipos distintos de focos hay aquí?", min_value=0, max_value=5, value=1, key=f"num_tipos_{i}")
+            
+            consumo_focos_zona = 0
+            for j in range(int(num_tipos_luz)):
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    focos = st.number_input("Cantidad", min_value=1, max_value=30, value=1, key=f"focos_{i}_{j}")
+                with c2:
+                    tipo_foco = st.selectbox("Tipo", ["LED", "Ahorrador (LFC)", "Dicroico / Halógeno", "Incandescente", "Tubo Fluorescente", "Otro"], key=f"t_foco_{i}_{j}")
+                with c3:
+                    def_w = 9 if tipo_foco == "LED" else 23 if tipo_foco == "Ahorrador (LFC)" else 50 if tipo_foco == "Dicroico / Halógeno" else 60 if tipo_foco == "Incandescente" else 32 if tipo_foco == "Tubo Fluorescente" else 15
+                    watts_foco = st.number_input("Watts (c/u)", min_value=1, max_value=500, value=def_w, key=f"w_foco_{i}_{j}")
+                with c4:
+                    horas_foco = st.number_input("Horas/día", min_value=0.0, max_value=24.0, value=4.0, step=0.5, key=f"h_foco_{i}_{j}")
+                    
+                consumo_focos_zona += (focos * watts_foco * horas_foco * 30) / 1000
+
+            # --- VENTILADOR DE TECHO ---
+            st.markdown("**🌀 Ventilador de Techo**")
+            tiene_vent = st.checkbox("Incluir ventilador de techo en esta zona", key=f"tiene_vent_{i}")
+            consumo_vent_zona = 0
+            
+            if tiene_vent:
+                cv1, cv2, cv3 = st.columns(3)
+                with cv1:
+                    cant_vent = st.number_input("Cantidad de ventiladores", min_value=1, max_value=5, value=1, key=f"c_vent_{i}")
+                    tiene_luz = st.checkbox("¿El ventilador tiene luces/focos?", value=True, key=f"v_luz_{i}")
+                with cv2:
+                    watts_motor = st.number_input("Watts del motor", min_value=10, max_value=200, value=70, key=f"w_motor_{i}")
+                    if tiene_luz:
+                        focos_vent = st.number_input("Focos por ventilador", min_value=1, max_value=6, value=4, key=f"f_vent_{i}")
+                        watts_foco_v = st.number_input("Watts (c/u)", min_value=1, max_value=100, value=7, key=f"w_fv_{i}")
+                with cv3:
+                    hrs_motor = st.number_input("Horas/día (motor)", min_value=0.0, max_value=24.0, value=4.0, step=0.5, key=f"h_motor_{i}")
+                    if tiene_luz:
+                        hrs_foco_v = st.number_input("Horas/día (focos)", min_value=0.0, max_value=24.0, value=2.0, step=0.5, key=f"h_fv_{i}")
                 
-            consumo_zona = (focos * watts_foco * horas_foco * 30) / 1000
-            st.caption(f"Consumo estimado en {nombre_zona}: **{consumo_zona:.2f} kWh/mes**")
-            kwh_luces_mensual += consumo_zona
+                consumo_motor = (cant_vent * watts_motor * hrs_motor * 30) / 1000
+                consumo_luces_vent = (cant_vent * focos_vent * watts_foco_v * hrs_foco_v * 30) / 1000 if tiene_luz else 0
+                consumo_vent_zona = consumo_motor + consumo_luces_vent
+
+            total_zona = consumo_focos_zona + consumo_vent_zona
+            st.caption(f"Consumo total estimado en **{nombre_zona}**: **{total_zona:.2f} kWh/mes**")
+            kwh_luces_mensual += total_zona
         
     consumo_calculado_mensual += kwh_luces_mensual
 
-# --- TAB OTROS (ACTUALIZADO CON CELULARES) ---
+# --- TAB OTROS ---
 with tab_otros:
     st.markdown("##### Electrodomésticos Secundarios y Dispositivos")
     c1, c2 = st.columns(2)
     
     with c1:
-        hrs_tv = st.number_input("Horas de TV al día (aprox. 100W)", min_value=0, max_value=24, value=4)
-        hrs_pc = st.number_input("Horas de Computadora al día (aprox. 150W)", min_value=0, max_value=24, value=3)
+        hrs_tv = st.number_input("Horas de TV al día (aprox. 100W)", min_value=0.0, max_value=24.0, value=4.0, step=0.5)
+        hrs_pc = st.number_input("Horas de Computadora al día (aprox. 150W)", min_value=0.0, max_value=24.0, value=3.0, step=0.5)
         lavadoras = st.number_input("Cargas de lavadora a la semana (aprox. 500W)", min_value=0, max_value=20, value=3)
         
     with c2:
-        celulares = st.number_input("Número de celulares a cargar al día", min_value=0, max_value=15, value=2)
-        hrs_cel = st.number_input("Horas de carga por celular al día (aprox. 10W)", min_value=0, max_value=24, value=2)
+        celulares = st.number_input("Número de celulares a cargar al día", min_value=0, max_value=15, value=3)
+        hrs_cel = st.number_input("Horas de carga por celular al día (aprox. 15W)", min_value=0.0, max_value=24.0, value=2.0, step=0.5)
         
-    kwh_otros = ((hrs_tv * 100 * 30) + (hrs_pc * 150 * 30) + (lavadoras * 4 * 500) + (celulares * hrs_cel * 10 * 30)) / 1000
+    kwh_otros = ((hrs_tv * 100 * 30) + (hrs_pc * 150 * 30) + (lavadoras * 4 * 500) + (celulares * hrs_cel * 15 * 30)) / 1000
     consumo_calculado_mensual += kwh_otros
 
 # --- TAB INSTALACIÓN ---
@@ -259,7 +293,7 @@ if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_contain
             - Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado} kWh.
             - Desviación entre cobro y aparatos: {diferencia} kWh.
             
-            Mis mayores consumos mensuales se dividen así: Climas ({kwh_climas_mensual} kWh), Refrigeración ({kwh_refri_mensual_total} kWh), Luces ({kwh_luces_mensual} kWh).
+            Mis mayores consumos mensuales se dividen así: Climas ({kwh_climas_mensual} kWh), Refrigeración ({kwh_refri_mensual_total} kWh), Iluminación y Ventiladores ({kwh_luces_mensual} kWh).
             Además, mi instalación eléctrica tiene {tipo_proteccion} y el cableado tiene {edad_cableado}.
             
             Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
