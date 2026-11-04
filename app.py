@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from google import genai
+from google.genai.errors import APIError
 from PIL import Image
 import json
 
@@ -12,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS (UI MODERNA Y LIMPIA) ---
+# --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -38,7 +39,30 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ENCABEZADO Y HEADER ---
+# --- FUNCIÓN DE RESPALDO (FALLBACK) ---
+def generar_con_respaldo(contents):
+    # Modelos oficiales en orden de prioridad y velocidad
+    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp']
+    ultimo_error = None
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    
+    for mod in modelos:
+        try:
+            response = client.models.generate_content(
+                model=mod,
+                contents=contents
+            )
+            return response.text
+        except APIError as e:
+            ultimo_error = e
+            continue
+        except Exception as e:
+            ultimo_error = e
+            continue
+            
+    raise ultimo_error
+
+# --- ENCABEZADO ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.image("https://www.utaltamira.edu.mx/wp-content/uploads/2017/06/LOGO-SIN-FONDO.png", width=280)
@@ -64,34 +88,25 @@ if 'datos_historial' not in st.session_state:
     })
 
 def procesar_imagen_recibo(imagen):
+    instruccion = """
+    Analiza esta tabla de historial de consumo de CFE. Extrae los primeros 6 renglones (los más recientes).
+    Devuelve ÚNICAMENTE un arreglo JSON válido con esta estructura exacta, sin texto adicional ni bloques markdown:
+    [
+        {"Bimestre": "MAY 26 - JUL 26", "Consumo (kWh)": 26, "Pago ($ MXN)": 58.0},
+        {"Bimestre": "MAR 26 - MAY 26", "Consumo (kWh)": 4, "Pago ($ MXN)": 58.0}
+    ]
+    Asegúrate de que los kWh sean números enteros y los pagos sean números decimales (sin símbolo de pesos).
+    """
     try:
-        client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-        instruccion = """
-        Analiza esta tabla de historial de consumo de CFE. Extrae los primeros 6 renglones (los más recientes).
-        Devuelve ÚNICAMENTE un arreglo JSON válido con esta estructura exacta, sin texto adicional ni bloques markdown:
-        [
-            {"Bimestre": "MAY 26 - JUL 26", "Consumo (kWh)": 26, "Pago ($ MXN)": 58.0},
-            {"Bimestre": "MAR 26 - MAY 26", "Consumo (kWh)": 4, "Pago ($ MXN)": 58.0}
-        ]
-        Asegúrate de que los kWh sean números enteros y los pagos sean números decimales (sin símbolo de pesos).
-        """
-        response = client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=[imagen, instruccion]
-        )
-        
-        texto_limpio = response.text.strip().replace('```json', '').replace('```', '')
+        respuesta_texto = generar_con_respaldo([imagen, instruccion])
+        texto_limpio = respuesta_texto.strip().replace('```json', '').replace('```', '')
         datos_extraidos = json.loads(texto_limpio)
         
         st.session_state.datos_historial = pd.DataFrame(datos_extraidos)
         st.success("¡Datos extraídos correctamente con Inteligencia Artificial!")
         st.rerun()
-        
     except Exception as e:
-        if "503" in str(e):
-            st.warning("⏳ Los servidores de IA están ocupados por alta demanda. Por favor, espera unos segundos y vuelve a dar clic.")
-        else:
-            st.error(f"Error técnico exacto al procesar la imagen: {e}")
+        st.error(f"No se pudieron procesar los datos de la imagen. Error: {e}")
 
 if metodo == "🖼️ Subir imagen":
     archivo = st.file_uploader("Selecciona la foto de tu recibo", type=["png", "jpg", "jpeg"])
@@ -206,7 +221,7 @@ with tab_luces:
             nombre_zona = st.text_input("Nombre del espacio (ej. Sala, Recámara Principal)", value=f"Habitación {i+1}", key=f"nombre_z_{i}")
             
             st.markdown("**💡 Dispositivos de Iluminación**")
-            num_tipos_luz = st.number_input("¿Cuántos tipos distintos de dispositivos (focos, ventiladores) hay aquí?", min_value=1, max_value=5, value=1, key=f"num_tipos_{i}")
+            num_tipos_luz = st.number_input("¿Cuántos tipos distintos de dispositivos hay aquí?", min_value=1, max_value=5, value=1, key=f"num_tipos_{i}")
             
             consumo_focos_zona = 0
             for j in range(int(num_tipos_luz)):
@@ -216,11 +231,11 @@ with tab_luces:
                 with c2:
                     tipo_foco = st.selectbox(
                         "Tipo", 
-                        ["LED", "Ahorrador (LFC)", "Dicroico / Halógeno", "Incandescente", "Tubo Fluorescente", "Ventilador de Techo (con focos)", "Otro"], 
+                        ["LED", "Ahorrador (LFC)", "Dicroico / Halógeno", "Incandescente", "Tubo Fluorescente", "Ventilador (con focos)", "Otro"], 
                         key=f"t_foco_{i}_{j}"
                     )
                 with c3:
-                    def_w = 9 if tipo_foco == "LED" else 23 if tipo_foco == "Ahorrador (LFC)" else 50 if tipo_foco == "Dicroico / Halógeno" else 60 if tipo_foco == "Incandescente" else 32 if tipo_foco == "Tubo Fluorescente" else 100 if tipo_foco == "Ventilador de Techo (con focos)" else 15
+                    def_w = 9 if tipo_foco == "LED" else 23 if tipo_foco == "Ahorrador (LFC)" else 50 if tipo_foco == "Dicroico / Halógeno" else 60 if tipo_foco == "Incandescente" else 32 if tipo_foco == "Tubo Fluorescente" else 100 if tipo_foco == "Ventilador (con focos)" else 15
                     watts_foco = st.number_input("Watts totales (c/u)", min_value=1, max_value=500, value=def_w, key=f"w_foco_{i}_{j}")
                 with c4:
                     horas_foco = st.number_input("Horas/día", min_value=0.0, max_value=24.0, value=4.0, step=0.5, key=f"h_foco_{i}_{j}")
@@ -228,14 +243,14 @@ with tab_luces:
                 consumo_focos_zona += (focos * watts_foco * horas_foco * 30) / 1000
                 lista_focos_ia.append(tipo_foco)
 
-            st.caption(f"Consumo total estimado en **{nombre_zona}**: **{consumo_focos_zona:.2f} kWh/mes**")
+            st.caption(f"Consumo en **{nombre_zona}**: **{consumo_focos_zona:.2f} kWh/mes**")
             kwh_luces_mensual += consumo_focos_zona
         
     consumo_calculado_mensual += kwh_luces_mensual
 
 # --- TAB OTROS ---
 with tab_otros:
-    st.markdown("##### Electrodomésticos Secundarios y Otras Cargas")
+    st.markdown("##### Electrodomésticos Secundarios")
     num_otros = st.number_input("¿Cuántos tipos distintos de aparatos vas a registrar?", min_value=1, max_value=20, value=3)
     kwh_otros = 0
     
@@ -246,22 +261,11 @@ with tab_otros:
         with c2:
             tipo_eq = st.selectbox(
                 "Tipo de aparato",
-                ["Televisión", "Computadora / Laptop", "Consola de Videojuegos", "Estéreo / Bocinas", "Lavadora", "Secadora de Ropa", "Plancha", "Microondas", "Refrigerador de agua (Dispensador)", "Celular / Tablet", "Otro"],
+                ["Televisión", "Computadora", "Consola de Videojuegos", "Lavadora", "Secadora", "Plancha", "Microondas", "Refrigerador de agua", "Otro"],
                 key=f"tipo_o_{i}"
             )
         with c3:
-            if tipo_eq == "Televisión": def_w = 100
-            elif tipo_eq == "Computadora / Laptop": def_w = 150
-            elif tipo_eq == "Consola de Videojuegos": def_w = 200
-            elif tipo_eq == "Estéreo / Bocinas": def_w = 80
-            elif tipo_eq == "Lavadora": def_w = 500
-            elif tipo_eq == "Secadora de Ropa": def_w = 3000
-            elif tipo_eq == "Plancha": def_w = 1200
-            elif tipo_eq == "Microondas": def_w = 1000
-            elif tipo_eq == "Refrigerador de agua (Dispensador)": def_w = 150
-            elif tipo_eq == "Celular / Tablet": def_w = 15
-            else: def_w = 100
-            
+            def_w = 100 if tipo_eq == "Televisión" else 150 if tipo_eq == "Computadora" else 200 if tipo_eq == "Consola de Videojuegos" else 500 if tipo_eq == "Lavadora" else 3000 if tipo_eq == "Secadora" else 1200 if tipo_eq == "Plancha" else 1000 if tipo_eq == "Microondas" else 150
             watts_eq = st.number_input("Watts (c/u)", min_value=1, max_value=10000, value=def_w, key=f"w_o_{i}")
         with c4:
             hrs_sem = st.number_input("Horas de uso A LA SEMANA", min_value=0.0, max_value=168.0, value=10.0, step=0.5, key=f"h_o_{i}")
@@ -270,49 +274,35 @@ with tab_otros:
         kwh_otros += consumo_eq_mensual
         
     consumo_calculado_mensual += kwh_otros
-    st.caption(f"**Consumo total estimado en Otros Equipos:** {kwh_otros:.2f} kWh/mes")
 
 # --- TAB INSTALACIÓN ---
 with tab_inst:
-    st.info("Estos datos técnicos ayudarán a la Inteligencia Artificial a detectar fugas, riesgos y problemas de seguridad eléctrica.")
+    st.info("Estos datos técnicos ayudarán a la IA a detectar fugas y riesgos.")
     
     col_i1, col_i2 = st.columns(2)
-    
     with col_i1:
         edad_cableado = st.selectbox("Antigüedad estimada del cableado", ["Menos de 10 años", "Entre 10 y 20 años", "Más de 20 años"])
-        interruptor_principal = st.selectbox("Interruptor Principal (junto al medidor)", ["Pastilla (Termomagnético)", "Fusibles (Cartucho)", "Tapones (Muy antiguo)", "No estoy seguro"])
-        sistema_tierra = st.radio("¿Cuenta con sistema de tierra física (tercer cable/varilla)?", ["Sí", "No", "No estoy seguro"], horizontal=True)
+        interruptor_principal = st.selectbox("Interruptor Principal", ["Pastilla", "Fusibles", "Tapones", "No estoy seguro"])
+        sistema_tierra = st.radio("¿Cuenta con sistema de tierra física?", ["Sí", "No", "No estoy seguro"], horizontal=True)
         
     with col_i2:
-        centro_carga = st.radio("¿Cuenta con Centro de Carga al interior de la casa?", ["Sí", "No"], horizontal=True)
-        if centro_carga == "Sí":
-            num_circuitos = st.number_input("¿Cuántos circuitos derivados (pastillas) tiene?", min_value=1, max_value=30, value=2)
-        else:
-            num_circuitos = 0
+        centro_carga = st.radio("¿Cuenta con Centro de Carga al interior?", ["Sí", "No"], horizontal=True)
+        num_circuitos = st.number_input("¿Cuántos circuitos (pastillas) tiene?", min_value=1, max_value=30, value=2) if centro_carga == "Sí" else 0
             
-    st.markdown("##### ⚠️ Historial de Problemas")
-    problemas_recientes = st.radio("¿Ha tenido problemas eléctricos recientemente (cortos circuitos, parpadeos, olor a quemado, se botan las pastillas)?", ["No", "Sí"], horizontal=True)
-    
-    desc_falla = ""
-    if problemas_recientes == "Sí":
-        desc_falla = st.text_area("Describa brevemente la falla o problema que ha notado:")
+    problemas_recientes = st.radio("¿Ha tenido problemas eléctricos recientemente?", ["No", "Sí"], horizontal=True)
+    desc_falla = st.text_area("Describa la falla:") if problemas_recientes == "Sí" else ""
 
 st.divider()
 
-# --- PASO 3: DIAGNÓSTICO IA Y RESULTADOS ---
+# --- PASO 3: DIAGNÓSTICO IA ---
 st.markdown('<div class="section-header">3. Resultados y Auditoría Energética</div>', unsafe_allow_html=True)
 
-# 1. CÁLCULOS MATEMÁTICOS EN TIEMPO REAL
 consumo_anual_calculado = consumo_calculado_mensual * 12
 diferencia = consumo_total_cfe - consumo_anual_calculado
 
 promedio_diario_cfe = consumo_total_cfe / 365 if consumo_total_cfe > 0 else 0
 promedio_diario_calculado = consumo_anual_calculado / 365 if consumo_anual_calculado > 0 else 0
-
-if promedio_diario_calculado > 0:
-    grado_certeza = (promedio_diario_cfe / promedio_diario_calculado) * 100
-else:
-    grado_certeza = 0.0
+grado_certeza = (promedio_diario_cfe / promedio_diario_calculado) * 100 if promedio_diario_calculado > 0 else 0.0
 
 if consumo_calculado_mensual > 0:
     pct_refri = (kwh_refri_mensual_total / consumo_calculado_mensual) * 100
@@ -322,77 +312,46 @@ if consumo_calculado_mensual > 0:
 else:
     pct_refri = pct_climas = pct_luces = pct_otros = 0.0
 
-# --- RENDERIZADO DE MÉTRICAS VISUALES ---
 st.subheader("📊 Resultados")
-
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Promedio Diario CFE", f"{promedio_diario_cfe:,.2f} kWh/día")
 col2.metric("Promedio Diario Calculado", f"{promedio_diario_calculado:,.2f} kWh/día")
-col3.metric("Desviación Anual", f"{diferencia:,.1f} kWh", delta=f"{diferencia:,.1f} kWh", delta_color="inverse")
-
-certeza_color = "normal" if 80 <= grado_certeza <= 120 else "inverse"
-col4.metric("Grado de Certeza", f"{grado_certeza:,.1f}%", help="Un valor alto indica posibles fugas. Un valor bajo indica aparatos sobreestimados.")
+col3.metric("Desviación Anual", f"{diferencia:,.1f} kWh")
+col4.metric("Grado de Certeza", f"{grado_certeza:,.1f}%")
 
 st.markdown("##### 🥧 Distribución del Consumo Calculado")
 cC1, cC2, cC3, cC4 = st.columns(4)
 cC1.metric("🧊 Refrigeración", f"{pct_refri:.1f}%")
 cC2.metric("❄️ Climatización", f"{pct_climas:.1f}%")
 cC3.metric("💡 Iluminación", f"{pct_luces:.1f}%")
-cC4.metric("💻 Otros Equipos", f"{pct_otros:.1f}%")
+cC4.metric("💻 Otros", f"{pct_otros:.1f}%")
 
 st.divider()
 
-# --- PREPARACIÓN DEL PROMPT ---
-# Pasamos las listas creadas arriba para que la IA sepa exactamente qué hay y aplique las reglas.
 info_refris_str = ", ".join(lista_refris_ia) if lista_refris_ia else "Ninguno"
 info_climas_str = ", ".join(lista_climas_ia) if lista_climas_ia else "Ninguno"
 info_focos_str = ", ".join(list(set(lista_focos_ia))) if lista_focos_ia else "Ninguno"
 
 prompt_ia = f"""Actúa como un ingeniero experto en auditoría energética residencial en México.
-Acabo de realizar un autodiagnóstico:
-- Consumo cobrado por CFE en el año: {consumo_total_cfe:,.0f} kWh (Promedio diario: {promedio_diario_cfe:.2f} kWh/día).
-- Consumo matemático estimado por mi censo de aparatos: {consumo_anual_calculado:,.0f} kWh (Promedio diario: {promedio_diario_calculado:.2f} kWh/día).
-- Grado de certeza (CFE/Censo): {grado_certeza:.1f}%.
-- Desviación entre cobro y aparatos: {diferencia:,.0f} kWh anuales.
+- Consumo CFE: {consumo_total_cfe:,.0f} kWh anuales.
+- Consumo Censo: {consumo_anual_calculado:,.0f} kWh anuales.
+- Grado de certeza: {grado_certeza:.1f}%.
+- Desviación: {diferencia:,.0f} kWh anuales.
+- Distribución: Refri ({pct_refri:.1f}%), Climas ({pct_climas:.1f}%), Luces ({pct_luces:.1f}%), Otros ({pct_otros:.1f}%).
+- Equipos: Refris ({info_refris_str}), Climas ({info_climas_str}), Focos ({info_focos_str}).
+- Instalación: Cableado {edad_cableado}, Interruptor {interruptor_principal}. Fallas: {problemas_recientes} {desc_falla}.
 
-Mi distribución de consumo según los aparatos es: Refrigeración ({pct_refri:.1f}%), Climatización ({pct_climas:.1f}%), Iluminación ({pct_luces:.1f}%), y Otros ({pct_otros:.1f}%).
-
-Detalle de mis equipos para aplicar reglas de eficiencia:
-- Refrigeradores en casa: {info_refris_str}
-- Climatización en casa: {info_climas_str}
-- Tipos de focos utilizados: {info_focos_str}
-
-Datos de la instalación eléctrica y seguridad:
-- Antigüedad del cableado: {edad_cableado}.
-- Tipo de interruptor principal: {interruptor_principal}.
-- Cuenta con centro de carga interno: {centro_carga} (Número de circuitos/pastillas: {num_circuitos}).
-- Cuenta con sistema de tierra física: {sistema_tierra}.
-- ¿Ha tenido fallas recientes?: {problemas_recientes}. {f'Descripción de la falla: {desc_falla}' if problemas_recientes == 'Sí' else ''}
-
-Redacta tu auditoría en 3 viñetas claras (sin lenguaje excesivamente técnico). 
-1. Diagnóstico de Certeza y Seguridad (Analiza el Grado de Certeza de {grado_certeza:.1f}%. Si es muy alto o bajo, di qué significa. ¿El estado del cableado y las fallas descritas indican fugas a tierra, riesgos de incendio o consumos vampiro severos justificando esa desviación?).
-2. Área de mayor oportunidad (¿Dónde estoy gastando más energía basándose en mis porcentajes?).
-3. Propuesta de ahorro y remediación (Acciones concretas para reducir los kWh en la categoría más alta y recomendaciones urgentes de mantenimiento eléctrico según los datos proporcionados. Además, incluye obligatoriamente las siguientes recomendaciones preventivas evaluando mis equipos actuales:
-   - Sugiere el cambio de aire acondicionado por tecnología Inverter si actualmente es convencional (estándar) y tiene más de 2 años de antigüedad.
-   - Sugiere el cambio de refrigerador si la tecnología actual tiene más de 7 años de antigüedad (Marcado como Mayor a 8 años).
-   - Recomienda la sustitución inmediata de lámparas LFC (ahorradoras), dicroicos, halógenos o cualquier tecnología que no sea LED por focos LED de alta eficiencia si detectas que los estoy usando).
+Redacta tu auditoría en 3 viñetas claras:
+1. Diagnóstico de Certeza y Seguridad.
+2. Área de mayor oportunidad.
+3. Propuesta de ahorro y remediación.
 """
 
-# --- BOTÓN PARA LLAMAR A LA IA ---
 st.subheader("🤖 Análisis y Propuesta de IA Experta")
 if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_container_width=True):
-    with st.spinner("La IA está auditando tus datos, analizando la certeza matemática, los riesgos y tu recibo..."):
+    with st.spinner("La IA está auditando tus datos..."):
         try:
-            client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-            
-            respuesta_ia = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=prompt_ia
-            )
-            st.info(respuesta_ia.text)
-            
+            respuesta_texto = generar_con_respaldo(prompt_ia)
+            st.info(respuesta_texto)
         except Exception as e:
-            if "503" in str(e):
-                st.warning("⏳ Los servidores de IA están ocupados por alta demanda. Por favor, espera unos segundos y vuelve a dar clic.")
-            else:
-                st.error(f"Error técnico al conectar con IA: {e}")
+            st.error(f"Error técnico al conectar con IA: {e}")
