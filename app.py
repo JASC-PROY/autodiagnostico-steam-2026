@@ -76,7 +76,7 @@ def procesar_imagen_recibo(imagen):
         Asegúrate de que los kWh sean números enteros y los pagos sean números decimales (sin símbolo de pesos).
         """
         response = client.models.generate_content(
-            model='gemini-2.8-flash',
+            model='gemini-3.8-flash',
             contents=[imagen, instruccion]
         )
         
