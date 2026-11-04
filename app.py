@@ -76,7 +76,7 @@ def procesar_imagen_recibo(imagen):
         Asegúrate de que los kWh sean números enteros y los pagos sean números decimales (sin símbolo de pesos).
         """
         response = client.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-1.5-flash',
             contents=[imagen, instruccion]
         )
         
@@ -89,7 +89,7 @@ def procesar_imagen_recibo(imagen):
         
     except Exception as e:
         if "503" in str(e):
-            st.warning("⏳ Los servidores de IA están un poco ocupados por alta demanda. Por favor, espera unos segundos y vuelve a intentarlo.")
+            st.warning("⏳ Los servidores de IA están ocupados por alta demanda. Por favor, espera unos segundos y vuelve a dar clic.")
         else:
             st.error(f"Error técnico exacto al procesar la imagen: {e}")
 
@@ -343,7 +343,7 @@ cC4.metric("💻 Otros Equipos", f"{pct_otros:.1f}%")
 st.divider()
 
 # --- PREPARACIÓN DEL PROMPT ---
-# Pasamos las listas creadas arriba para que la IA sepa exactamente qué hay y aplique las reglas que solicitaste.
+# Pasamos las listas creadas arriba para que la IA sepa exactamente qué hay y aplique las reglas.
 info_refris_str = ", ".join(lista_refris_ia) if lista_refris_ia else "Ninguno"
 info_climas_str = ", ".join(lista_climas_ia) if lista_climas_ia else "Ninguno"
 info_focos_str = ", ".join(list(set(lista_focos_ia))) if lista_focos_ia else "Ninguno"
@@ -386,10 +386,13 @@ if st.button("Generar Autodiagnóstico con IA 🧠", type="primary", use_contain
             client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
             
             respuesta_ia = client.models.generate_content(
-                model='gemini-3.8-flash',
+                model='gemini-1.5-flash',
                 contents=prompt_ia
             )
             st.info(respuesta_ia.text)
             
         except Exception as e:
-            st.error(f"Error técnico al conectar con IA: {e}")
+            if "503" in str(e):
+                st.warning("⏳ Los servidores de IA están ocupados por alta demanda. Por favor, espera unos segundos y vuelve a dar clic.")
+            else:
+                st.error(f"Error técnico al conectar con IA: {e}")
