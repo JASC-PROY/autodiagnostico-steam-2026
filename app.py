@@ -88,7 +88,10 @@ def procesar_imagen_recibo(imagen):
         st.rerun()
         
     except Exception as e:
-        st.error(f"Error técnico exacto al procesar la imagen: {e}")
+        if "503" in str(e):
+            st.warning("⏳ Los servidores de IA están un poco ocupados por alta demanda. Por favor, espera unos segundos y vuelve a intentarlo.")
+        else:
+            st.error(f"Error técnico exacto al procesar la imagen: {e}")
 
 if metodo == "🖼️ Subir imagen":
     archivo = st.file_uploader("Selecciona la foto de tu recibo", type=["png", "jpg", "jpeg"])
